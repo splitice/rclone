@@ -896,7 +896,7 @@ func (o *Object) MimeType() string {
 // setMetaData sets the metadata from info
 func (o *Object) setMetaData(info *api.JottaFile) (err error) {
 	o.hasMetaData = true
-	o.size = int64(info.Size)
+	o.size = info.Size
 	o.md5 = info.MD5
 	o.mimeType = info.MimeType
 	o.modTime = time.Time(info.ModifiedAt)
