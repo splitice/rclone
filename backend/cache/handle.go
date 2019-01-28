@@ -457,13 +457,15 @@ func (w *worker) run() {
 		//	chunkEnd = w.r.cachedObject.Size()
 		//}
 
-		w.download(chunkStart, chunkEnd, 0)
+		w.download(chunkStart, 0)
 	}
 }
 
-func (w *worker) download(chunkStart, chunkEnd int64, retry int) {
+func (w *worker) download(chunkStart, retry int) {
 	var err error
 	var data []byte
+
+	chunkEnd := int64(w.r.cacheFs().opt.ChunkSize) + chunkStart
 
 	// stop retries
 	if retry >= w.r.cacheFs().opt.ReadRetries {
@@ -486,7 +488,7 @@ func (w *worker) download(chunkStart, chunkEnd int64, retry int) {
 		if err != nil {
 			fs.Errorf(w, "%v", err)
 		}
-		w.download(chunkStart, chunkEnd, retry+1)
+		w.download(chunkStart, retry+1)
 		return
 	}
 
@@ -499,7 +501,7 @@ func (w *worker) download(chunkStart, chunkEnd int64, retry int) {
 		if err != nil {
 			fs.Errorf(w, "%v", err)
 		}
-		w.download(chunkStart, chunkEnd, retry+1)
+		w.download(chunkStart, retry+1)
 		return
 	}
 	data = data[:sourceRead] // reslice to remove extra garbage
