@@ -428,7 +428,7 @@ func (w *worker) run() {
 	}
 }
 
-func (w *worker) download(chunkStart, retry int) {
+func (w *worker) download(chunkStart int64, retry int) {
 	var err error
 	var data []byte
 
