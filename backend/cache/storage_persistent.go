@@ -497,7 +497,7 @@ func (b *Persistent) AddChunk(fp string, data []byte, offset int64) error {
 	}
 
 	size := int64(len(data))
-
+	data = nil
 
 	return b.db.Update(func(tx *bolt.Tx) error {
 		tsBucket := tx.Bucket([]byte(DataTsBucket))
