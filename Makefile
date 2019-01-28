@@ -88,6 +88,7 @@ ifdef FULL_TESTS
 	go get -u github.com/kisielk/errcheck
 	go get -u golang.org/x/tools/cmd/goimports
 	go get -u golang.org/x/lint/golint
+	go get -u github.com/90TechSAS/go-buffer-pool-recycler
 endif
 
 # Get the release dependencies
