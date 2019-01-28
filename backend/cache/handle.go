@@ -70,7 +70,7 @@ func NewObjectHandle(o *Object, cfs *Fs) *Handle {
 		UseMemory: !cfs.opt.ChunkNoMemory,
 		reading:   false,
 	}
-	r.pool = bpool.GetPool(int(r.cfs.opt.ChunkSize), 2) // Get a pool
+	r.pool = bpool.GetPool(int(r.cfs.opt.ChunkSize), 5) // Get a pool
 	r.seenOffsets = make(map[int64]bool)
 	r.memory = NewMemory(-1)
 
