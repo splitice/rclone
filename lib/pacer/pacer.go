@@ -2,12 +2,14 @@
 package pacer
 
 import (
+	"context"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/ncw/rclone/fs"
 	"github.com/ncw/rclone/fs/fserrors"
+	"golang.org/x/time/rate"
 )
 
 // Pacer state
@@ -15,6 +17,8 @@ type Pacer struct {
 	mu                 sync.Mutex    // Protecting read/writes
 	minSleep           time.Duration // minimum sleep time
 	maxSleep           time.Duration // maximum sleep time
+	burst              int           // number of calls to send without rate limiting
+	limiter            *rate.Limiter // rate limiter for the minsleep
 	decayConstant      uint          // decay constant
 	attackConstant     uint          // attack constant
 	pacer              chan struct{} // To pace the operations
@@ -59,6 +63,12 @@ const (
 	//
 	// See https://developers.google.com/drive/v2/web/handle-errors#exponential-backoff
 	GoogleDrivePacer
+
+	// S3Pacer is a specialised pacer for S3
+	//
+	// It is basically the defaultPacer, but allows the sleep time to go to 0
+	// when things are going well.
+	S3Pacer
 )
 
 // Paced is a function which is called by the Call and CallNoRetry
@@ -70,7 +80,6 @@ type Paced func() (bool, error)
 // New returns a Pacer with sensible defaults
 func New() *Pacer {
 	p := &Pacer{
-		minSleep:       10 * time.Millisecond,
 		maxSleep:       2 * time.Second,
 		decayConstant:  2,
 		attackConstant: 1,
@@ -80,6 +89,7 @@ func New() *Pacer {
 	p.sleepTime = p.minSleep
 	p.SetPacer(DefaultPacer)
 	p.SetMaxConnections(fs.Config.Checkers + fs.Config.Transfers)
+	p.SetMinSleep(10 * time.Millisecond)
 
 	// Put the first pacing token in
 	p.pacer <- struct{}{}
@@ -108,6 +118,16 @@ func (p *Pacer) SetMinSleep(t time.Duration) *Pacer {
 	defer p.mu.Unlock()
 	p.minSleep = t
 	p.sleepTime = p.minSleep
+	p.limiter = rate.NewLimiter(rate.Every(p.minSleep), p.burst)
+	return p
+}
+
+// SetBurst sets the burst with no limiting of the pacer
+func (p *Pacer) SetBurst(n int) *Pacer {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.burst = n
+	p.limiter = rate.NewLimiter(rate.Every(p.minSleep), p.burst)
 	return p
 }
 
@@ -185,6 +205,8 @@ func (p *Pacer) SetPacer(t Type) *Pacer {
 		p.calculatePace = p.acdPacer
 	case GoogleDrivePacer:
 		p.calculatePace = p.drivePacer
+	case S3Pacer:
+		p.calculatePace = p.s3Pacer
 	default:
 		p.calculatePace = p.defaultPacer
 	}
@@ -208,11 +230,19 @@ func (p *Pacer) beginCall() {
 
 	p.mu.Lock()
 	// Restart the timer
-	go func(t time.Duration) {
+	go func(sleepTime, minSleep time.Duration) {
 		// fs.Debugf(f, "New sleep for %v at %v", t, time.Now())
-		time.Sleep(t)
+		// Sleep the minimum time with the rate limiter
+		if minSleep > 0 && sleepTime >= minSleep {
+			_ = p.limiter.Wait(context.Background())
+			sleepTime -= minSleep
+		}
+		// Then sleep the remaining time
+		if sleepTime > 0 {
+			time.Sleep(sleepTime)
+		}
 		p.pacer <- struct{}{}
-	}(p.sleepTime)
+	}(p.sleepTime, p.minSleep)
 	p.mu.Unlock()
 }
 
@@ -306,6 +336,46 @@ func (p *Pacer) drivePacer(retry bool) {
 		// maxSleep is 2**(consecutiveRetries-1) seconds + random milliseconds
 		p.sleepTime = time.Second<<uint(consecutiveRetries-1) + time.Duration(rand.Int63n(int64(time.Second)))
 		fs.Debugf("pacer", "Rate limited, sleeping for %v (%d consecutive low level retries)", p.sleepTime, p.consecutiveRetries)
+	}
+}
+
+// s3Pacer implements a pacer compatible with our expectations of S3, where it tries to not
+// delay at all between successful calls, but backs off in the default fashion in response
+// to any errors.
+// The assumption is that errors should be exceedingly rare (S3 seems to have largely solved
+//  the sort of scability questions rclone is likely to run into), and in the happy case
+//  it can handle calls with no delays between them.
+//
+// Basically defaultPacer, but with some handling of sleepTime going to/from 0ms
+// Ignores minSleep entirely
+//
+// Call with p.mu held
+func (p *Pacer) s3Pacer(retry bool) {
+	oldSleepTime := p.sleepTime
+	if retry {
+		if p.attackConstant == 0 {
+			p.sleepTime = p.maxSleep
+		} else {
+			if p.sleepTime == 0 {
+				p.sleepTime = p.minSleep
+			} else {
+				p.sleepTime = (p.sleepTime << p.attackConstant) / ((1 << p.attackConstant) - 1)
+			}
+		}
+		if p.sleepTime > p.maxSleep {
+			p.sleepTime = p.maxSleep
+		}
+		if p.sleepTime != oldSleepTime {
+			fs.Debugf("pacer", "Rate limited, increasing sleep to %v", p.sleepTime)
+		}
+	} else {
+		p.sleepTime = (p.sleepTime<<p.decayConstant - p.sleepTime) >> p.decayConstant
+		if p.sleepTime < p.minSleep {
+			p.sleepTime = 0
+		}
+		if p.sleepTime != oldSleepTime {
+			fs.Debugf("pacer", "Reducing sleep to %v", p.sleepTime)
+		}
 	}
 }
 
