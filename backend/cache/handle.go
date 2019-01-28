@@ -14,10 +14,10 @@ import (
 	"github.com/ncw/rclone/fs"
 	"github.com/ncw/rclone/fs/operations"
 	"github.com/pkg/errors"
+	"github.com/90TechSAS/go-buffer-pool-recycler"
 )
 
 var uploaderMap = make(map[string]*backgroundWriter)
-var uploaderMapMx sync.Mutex
 
 // initBackgroundUploader returns a single instance
 func initBackgroundUploader(fs *Fs) (*backgroundWriter, error) {
@@ -49,9 +49,10 @@ type Handle struct {
 	seenOffsets    map[int64]bool
 	mu             sync.Mutex
 	workersWg      sync.WaitGroup
-	confirmReading chan bool
 	workers        int
 	maxWorkerID    int
+	pool           bpool.Pool
+	confirmReading chan bool
 	UseMemory      bool
 	closed         bool
 	reading        bool
@@ -68,6 +69,7 @@ func NewObjectHandle(o *Object, cfs *Fs) *Handle {
 		UseMemory: !cfs.opt.ChunkNoMemory,
 		reading:   false,
 	}
+	r.pool = bpool.GetPool(r.cfs.opt.ChunkSize, 2) // Get a pool
 	r.seenOffsets = make(map[int64]bool)
 	r.memory = NewMemory(-1)
 
@@ -459,7 +461,7 @@ func (w *worker) download(chunkStart int64, retry int) {
 		return
 	}
 
-	data = make([]byte, chunkEnd-chunkStart)
+	data = w.r.pool.Get()
 	var sourceRead int
 	sourceRead, err = io.ReadFull(w.rc, data)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
@@ -489,6 +491,8 @@ func (w *worker) download(chunkStart int64, retry int) {
 	if err != nil {
 		fs.Errorf(w, "failed caching chunk in storage %v: %v", chunkStart, err)
 	}
+
+	w.r.pool.Put(data)
 }
 
 const (
