@@ -496,7 +496,7 @@ func (w *worker) download(chunkStart int64, retry int) {
 		fs.Errorf(w, "failed caching chunk in storage %v: %v", chunkStart, err)
 	}
 
-	w.r.Lock()
+	w.r.mu.Lock()
 	w.r.pool.Put(data)
 	defer w.r.mu.Unlock()
 }
