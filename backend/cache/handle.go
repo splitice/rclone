@@ -418,7 +418,7 @@ func (w *worker) run() {
 			}
 		}
 
-		chunkEnd := chunkStart + int64(w.r.cacheFs().opt.ChunkSize)
+		//chunkEnd := chunkStart + int64(w.r.cacheFs().opt.ChunkSize)
 		// TODO: Remove this comment if it proves to be reliable for #1896
 		//if chunkEnd > w.r.cachedObject.Size() {
 		//	chunkEnd = w.r.cachedObject.Size()
