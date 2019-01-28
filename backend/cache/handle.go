@@ -462,7 +462,7 @@ func (w *worker) download(chunkStart int64, retry int) {
 		return
 	}
 
-	w.r.Lock()
+	w.r.mu.Lock()
 	data = w.r.pool.Get()
 	defer w.r.mu.Unlock()
 
