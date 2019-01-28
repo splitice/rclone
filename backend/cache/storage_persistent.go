@@ -496,6 +496,9 @@ func (b *Persistent) AddChunk(fp string, data []byte, offset int64) error {
 		return err
 	}
 
+	size := int64(len(data))
+
+
 	return b.db.Update(func(tx *bolt.Tx) error {
 		tsBucket := tx.Bucket([]byte(DataTsBucket))
 		ts := time.Now()
@@ -524,7 +527,7 @@ func (b *Persistent) AddChunk(fp string, data []byte, offset int64) error {
 		if found {
 			return nil
 		}
-		enc, err := json.Marshal(chunkInfo{Path: fp, Offset: offset, Size: int64(len(data))})
+		enc, err := json.Marshal(chunkInfo{Path: fp, Offset: offset, Size: size})
 		if err != nil {
 			fs.Debugf(fp, "failed to timestamp chunk: %v", err)
 		}
