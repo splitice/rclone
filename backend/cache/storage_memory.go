@@ -63,6 +63,8 @@ func (m *Memory) AddChunk(fp string, data []byte, offset int64) error {
 // AddChunkAhead adds a new chunk of a cached object
 func (m *Memory) AddChunkAhead(fp string, data []byte, offset int64, t time.Duration) error {
 	key := fp + "-" + strconv.FormatInt(offset, 10)
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
 	m.db.Set(key, data, cache.DefaultExpiration)
 
 	return nil
