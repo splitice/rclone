@@ -50,10 +50,9 @@ version:
 
 # Full suite of integration tests
 test:	rclone
-	go install github.com/ncw/rclone/fstest/test_all
-	-go test -v -count 1 $(BUILDTAGS) $(GO_FILES) 2>&1 | tee test.log
-	-test_all github.com/ncw/rclone/fs/operations github.com/ncw/rclone/fs/sync 2>&1 | tee fs/test_all.log
-	@echo "Written logs in test.log and fs/test_all.log"
+	go install --ldflags "-s -X github.com/ncw/rclone/fs.Version=$(TAG)" $(BUILDTAGS) github.com/ncw/rclone/fstest/test_all
+	-test_all 2>&1 | tee test_all.log
+	@echo "Written logs in test_all.log"
 
 # Quick test
 quicktest:
@@ -88,7 +87,7 @@ build_dep:
 ifdef FULL_TESTS
 	go get -u github.com/kisielk/errcheck
 	go get -u golang.org/x/tools/cmd/goimports
-	go get -u github.com/golang/lint/golint
+	go get -u golang.org/x/lint/golint
 endif
 
 # Get the release dependencies
@@ -99,15 +98,15 @@ release_dep:
 # Update dependencies
 update:
 	GO111MODULE=on go get -u ./...
-	GO111MODULE=on go tidy
-	GO111MODULE=on go vendor
+	GO111MODULE=on go mod tidy
+	GO111MODULE=on go mod vendor
 
 doc:	rclone.1 MANUAL.html MANUAL.txt rcdocs commanddocs
 
 rclone.1:	MANUAL.md
 	pandoc -s --from markdown --to man MANUAL.md -o rclone.1
 
-MANUAL.md:	bin/make_manual.py docs/content/*.md commanddocs
+MANUAL.md:	bin/make_manual.py docs/content/*.md commanddocs backenddocs
 	./bin/make_manual.py
 
 MANUAL.html:	MANUAL.md
@@ -117,7 +116,10 @@ MANUAL.txt:	MANUAL.md
 	pandoc -s --from markdown --to plain MANUAL.md -o MANUAL.txt
 
 commanddocs: rclone
-	rclone gendocs docs/content/commands/
+	XDG_CACHE_HOME="" XDG_CONFIG_HOME="" HOME="\$$HOME" USER="\$$USER" rclone gendocs docs/content/commands/
+
+backenddocs: rclone bin/make_backend_docs.py
+	./bin/make_backend_docs.py
 
 rcdocs: rclone
 	bin/make_rc_docs.sh
@@ -183,6 +185,13 @@ ifndef BRANCH_PATH
 endif
 	@echo Beta release ready at $(BETA_URL)
 
+circleci_upload:
+	./rclone --config bin/travis.rclone.conf -v copy build/ $(BETA_UPLOAD)/testbuilds
+ifndef BRANCH_PATH
+	./rclone --config bin/travis.rclone.conf -v copy build/ $(BETA_UPLOAD_ROOT)/test/testbuilds-latest
+endif
+	@echo Beta release ready at $(BETA_URL)/testbuilds
+
 BUILD_FLAGS := -exclude "^(windows|darwin)/"
 ifeq ($(TRAVIS_OS_NAME),osx)
 	BUILD_FLAGS := -include "^darwin/" -cgo
@@ -229,4 +238,3 @@ startdev:
 
 winzip:
 	zip -9 rclone-$(TAG).zip rclone.exe
-
