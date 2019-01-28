@@ -219,10 +219,11 @@ func (r *Handle) getChunk(chunkStart int64) ([]byte, error) {
 	}
 
 	if !found {
+		data = w.r.pool.Get()
 		// we're gonna give the workers a chance to pickup the chunk
 		// and retry a couple of times
 		for i := 0; i < r.cacheFs().opt.ReadRetries*8; i++ {
-			data, err = r.storage().GetChunk(r.cachedObject, chunkStart)
+			err = r.storage().GetChunk(r.cachedObject, chunkStart, data)
 			if err == nil {
 				found = true
 				break
@@ -405,15 +406,18 @@ func (w *worker) run() {
 			}
 
 			// add it in ram if it's in the persistent storage
-			data, err = w.r.storage().GetChunk(w.r.cachedObject, chunkStart)
+			data = w.r.pool.Get()
+			err = w.r.storage().GetChunk(w.r.cachedObject, chunkStart, data)
 			if err == nil {
 				err = w.r.memory.AddChunk(w.r.cachedObject.abs(), data, chunkStart)
 				if err != nil {
 					fs.Errorf(w, "failed caching chunk in ram %v: %v", chunkStart, err)
 				} else {
+					w.r.pool.Put(data)
 					continue
 				}
 			}
+			w.r.pool.Put(data)
 		} else {
 			if w.r.storage().HasChunk(w.r.cachedObject, chunkStart) {
 				continue
