@@ -18,6 +18,7 @@ import (
 )
 
 var uploaderMap = make(map[string]*backgroundWriter)
+var uploaderMapMx sync.Mutex
 
 // initBackgroundUploader returns a single instance
 func initBackgroundUploader(fs *Fs) (*backgroundWriter, error) {
@@ -51,7 +52,7 @@ type Handle struct {
 	workersWg      sync.WaitGroup
 	workers        int
 	maxWorkerID    int
-	pool           bpool.Pool
+	pool           *bpool.Pool
 	confirmReading chan bool
 	UseMemory      bool
 	closed         bool
@@ -69,7 +70,7 @@ func NewObjectHandle(o *Object, cfs *Fs) *Handle {
 		UseMemory: !cfs.opt.ChunkNoMemory,
 		reading:   false,
 	}
-	r.pool = bpool.GetPool(r.cfs.opt.ChunkSize, 2) // Get a pool
+	r.pool = bpool.GetPool(int(r.cfs.opt.ChunkSize), int(r.cfs.opt.TotalWorkers)) // Create a pool
 	r.seenOffsets = make(map[int64]bool)
 	r.memory = NewMemory(-1)
 
@@ -466,6 +467,7 @@ func (w *worker) download(chunkStart int64, retry int) {
 	}
 
 	data = w.r.pool.Get()
+
 	var sourceRead int
 	sourceRead, err = io.ReadFull(w.rc, data)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {

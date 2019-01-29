@@ -89,6 +89,7 @@ ifdef FULL_TESTS
 	go get -u golang.org/x/tools/cmd/goimports
 	go get -u golang.org/x/lint/golint
 endif
+	go get -u github.com/90TechSAS/go-buffer-pool-recycler
 
 # Get the release dependencies
 release_dep:
